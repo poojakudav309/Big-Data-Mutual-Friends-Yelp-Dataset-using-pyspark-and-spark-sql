@@ -1,6 +1,6 @@
 from pyspark.sql import SparkSession
 from pyspark.sql.functions import split
-from pyspark.sql.functions import *
+import pyspark.sql.functions as f
 from pyspark.sql.types import IntegerType
 from pyspark import SparkContext, SparkConf
 
@@ -22,6 +22,9 @@ if __name__ == "__main__":
     business = business.select(business._1.alias('business_id'), business._2.alias('full_address'))
 
     x=business.filter(business.full_address.like('%Stanford%'))
-    join=review.join(x, review.business_id == x.business_id)
-    df=join.select(review.user_id,review.stars)
+    join=review.join(x, review.business_id == x.business_id).select('user_id','stars')
+    #df=join.select(f.concat(f.col('user_id'),f.lit('\t'),f.col('stars'))).alias('onecol')
+    join.show()
+
+
 

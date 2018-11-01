@@ -18,6 +18,8 @@ Find top-10 friend pairs by their total number of common friends. For each top-1
 """
 from pyspark import SparkContext
 from pyspark import SparkConf
+from pyspark.sql import SparkSession
+from pyspark.sql.functions import *
 
 
 def make_pairs(line):
@@ -36,42 +38,31 @@ def make_pairs(line):
         return all_pairs
 
 
-def join_formatting(line):
-    user1_fname  =line[1][1][0]
-    user1_lname = line[1][1][1]
-    user1_addr = line[1][1][2]
-    new_key = line[1][0][0]
-    common_friends= line[1][0][1]
-    return new_key,((user1_fname,user1_lname,user1_addr),common_friends)
-
-
-def final_formatting(line):
-    usr1_fname=line[1][0][0][0]
-    usr1_lname=line[1][0][0][1]
-    usr2_fname=line[1][1][0]
-    usr2_lname=line[1][1][1]
-    usr2_addr=line[1][1][2]
-    usr1_addr=line[1][0][0][2]
-    comm_friends=line[1][0][1]
-    return "{}\t{}\t{}\t{}\t{}\t{}\t{}".format(comm_friends,usr1_fname,usr1_lname,usr1_addr,usr2_fname,usr2_lname,usr2_addr)
+def formatting(line):
+    x = line[0]
+    y = line[1][0]
+    t = line[1][1]
+    return x, y, t
 
 
 if __name__ == "__main__":
-    conf = SparkConf().setMaster("local").setAppName("q2")
+    conf = SparkConf().setMaster("local").setAppName("sql_sample")
     sc = SparkContext(conf=conf)
+    spark = SparkSession(sc)
 
-    user_details = sc.textFile("userdata.txt").map(lambda line: line.split(","))
-    user_details_cleaned=user_details.map(lambda x: (x[0],(x[1],x[2],x[3])))
-    friends = sc.textFile("soc-LiveJournal1Adj.txt").map(lambda x: x.split("\t")).filter(lambda x: len(x) == 2).map(lambda x: [x[0], x[1].split(",")])
+    user_details = sc.textFile("userdata.txt").map(lambda line: line.split(",")).toDF(['id','fname','lname','address']).select(['id','fname','lname','address'])
+
+    friends = sc.textFile("soc-LiveJournal1Adj.txt").map(lambda x: x.split("\t")).filter(lambda x: len(x) == 2).map(
+        lambda x: [x[0], x[1].split(",")])
     friend_pairs = friends.flatMap(make_pairs)
     common_friends = friend_pairs.reduceByKey(lambda x, y: x.intersection(y))
-    x=common_friends.map(lambda x:(x[0].split(",")[0],(x[0].split(",")[1],len(x[1]))))
-    top_10=x.top(10,key=lambda x: x[1][1])
-    y=sc.parallelize(top_10)
-    joined_tab1 =y.join(user_details_cleaned)
-    join_tab_formatted=joined_tab1.map(join_formatting)
-    final_join=join_tab_formatted.join(user_details_cleaned)
-    final_result_formatted=final_join.map(final_formatting)
-    final_result_formatted.coalesce(1).saveAsTextFile("q2.txt")
-
+    x = common_friends.map(lambda x: (x[0].split(",")[0], (x[0].split(",")[1], len(x[1]))))
+    z = x.map(formatting)
+    t = z.toDF(['user1', 'user2', 'number_of_common_friends'])
+    k=t.orderBy('number_of_common_friends',ascending=False).limit(10)
+    joined_1=k.join(user_details,k.user1==user_details.id).select('user1','fname','lname','address','user2','number_of_common_friends')
+    joined_1 = joined_1.withColumnRenamed('fname', 'fname1').withColumnRenamed('lname', 'lname1').withColumnRenamed(
+        'address', 'address1')
+    joined_2=joined_1.join(user_details,joined_1.user2==user_details.id).select('number_of_common_friends','fname1','lname1','address1','fname','lname','address')
+    joined_2.show()
 
